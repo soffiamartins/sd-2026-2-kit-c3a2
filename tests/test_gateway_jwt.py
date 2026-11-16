@@ -17,10 +17,18 @@ AMBIENTE_TESTE = {
 
 
 class TesteAutenticacaoJWT(TestCase):
+    
     def setUp(self):
         self.ambiente = patch.dict("os.environ", AMBIENTE_TESTE)
         self.ambiente.start()
         self.addCleanup(self.ambiente.stop)
+
+        # Simula o Redis nos testes da Etapa 1.
+        self.redis_patch = patch("gateway.app.obter_redis")
+        self.redis_simulado = self.redis_patch.start().return_value
+        self.redis_simulado.eval.return_value = [1, 60]
+        self.addCleanup(self.redis_patch.stop)
+
         self.cliente = TestClient(app)
         self.addCleanup(self.cliente.close)
 
