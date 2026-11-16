@@ -26,7 +26,9 @@ services:
     ports: ["8000:8000"]
     environment:
       - URL_INFERENCIA=http://inferencia:8001
-      - JWT_SEGREDO=${JWT_SEGREDO:-troque-este-segredo}
+      - JWT_SEGREDO=${JWT_SEGREDO:?Defina JWT_SEGREDO no arquivo .env}
+      - JWT_USUARIO=${JWT_USUARIO:?Defina JWT_USUARIO no arquivo .env}
+      - JWT_SENHA=${JWT_SENHA:?Defina JWT_SENHA no arquivo .env}
     depends_on: [inferencia]
 
 # Observe: os servicos se referenciam pelo NOME (inferencia, redis),

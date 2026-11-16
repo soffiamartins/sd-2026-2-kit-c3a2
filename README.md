@@ -1,3 +1,4 @@
+
 # Kit de Partida — C3.A2: Plataforma de IA como Serviço (projeto integrador)
 
 **Sistemas Distribuídos e Computação em Nuvem · FAESA · 2026/2**
@@ -18,6 +19,11 @@ para entrevista de emprego.
 > A sua nota vem da **engenharia distribuída**: arquitetura, comunicação, resiliência e
 > execução reproduzível — a sofisticação do modelo **não pontua**.
 
+> **Status:** trabalho em andamento. A etapa 1 (autenticacao JWT do gateway) esta
+> implementada e possui testes automatizados. Os diretorios `inferencia/` e
+> `worker/` ainda sao estruturas vazias do kit de partida. Por isso, o comando
+> `docker compose up --build` so podera funcionar ao final das etapas 3 e 4.
+
 ---
 
 ## Como começar
@@ -35,23 +41,76 @@ python -m venv .venv
 source .venv/bin/activate
 
 # 3. Instale as dependências
-pip install -r requirements.txt
+pip install -r requirements-test.txt
 ```
 
 ```bash
 # 4. Copie o arquivo de ambiente
 cp .env.example .env
 
-# 5. Suba a stack inteira com UM comando
+# 5. Quando as etapas 3 e 4 estiverem prontas, suba a stack com UM comando
 docker compose up --build
 
-# 6. Teste pelo gateway (nunca pelos serviços diretamente)
+# 6. Teste pelo gateway (apos o inicio da stack)
 curl http://localhost:8000/saude
+curl -X POST http://localhost:8000/login \
+  -H "Content-Type: application/json" \
+  -d '{"usuario":"SEU_USUARIO","senha":"SUA_SENHA"}'
+# Copie o campo access_token retornado pelo /login:
 curl -X POST http://localhost:8000/predict \
-  -H "Content-Type: application/json" -d '{"texto":"servico excelente"}'
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer SEU_TOKEN" \
+  -d '{"texto":"servico excelente"}'
 
 # 7. Publique na nuvem seguindo deploy/INSTRUCOES.md
 ```
+
+---
+
+## Etapa 1: autenticacao JWT (concluida)
+
+- `POST /login` recebe `{"usuario": "...", "senha": "..."}` e retorna um
+  `access_token` do tipo Bearer, valido por 60 minutos.
+- `POST /predict` retorna **401** sem token ou com token invalido/expirado.
+- `GET /saude` continua publico para verificacao de disponibilidade.
+- As credenciais de demonstracao sao configuradas por `JWT_USUARIO`, `JWT_SENHA`
+  e `JWT_SEGREDO` no ambiente; nao existem valores padrao no codigo.
+- Para `JWT_SEGREDO`, utilize pelo menos 32 caracteres aleatorios. Gere um valor
+  com `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
+- Copie `.env.example` para `.env` e preencha `JWT_USUARIO`, `JWT_SENHA` e
+  `JWT_SEGREDO` antes de executar o Docker Compose. Nunca versione `.env`.
+
+**Testes isolados do gateway (sem Docker e sem servico de inferencia):**
+
+```bash
+python -m pip install -r requirements-test.txt
+python -m unittest discover -s tests -v
+```
+
+Os testes verificam login correto/incorreto, protecao por token, expiracao,
+assinatura, configuracao ausente e encaminhamento simulado para a inferencia.
+
+**Exemplo manual em PowerShell (Windows):** em um terminal, dentro da raiz do
+projeto, defina valores proprios e execute o gateway:
+
+```powershell
+$env:JWT_SEGREDO = (python -c "import secrets; print(secrets.token_urlsafe(48))")
+$env:JWT_USUARIO = "aluno"
+$env:JWT_SENHA = "senha-forte-somente-local"
+python -m uvicorn gateway.app:app --port 8000
+```
+
+Em um **segundo** terminal PowerShell:
+
+```powershell
+curl.exe http://localhost:8000/saude
+curl.exe -i -X POST http://localhost:8000/predict -H "Content-Type: application/json" -d '{"texto":"teste"}'
+$token = (Invoke-RestMethod -Method Post -Uri http://localhost:8000/login -ContentType "application/json" -Body '{"usuario":"aluno","senha":"senha-forte-somente-local"}').access_token
+```
+
+O `POST /predict` sem token deve responder **401**. O login deve fornecer um
+token; o `POST /predict` autenticado so retornara **200** quando o servico de
+inferencia estiver implementado (etapas seguintes). Ate la, pode retornar 503.
 
 ---
 
