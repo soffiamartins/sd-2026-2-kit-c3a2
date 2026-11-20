@@ -21,6 +21,7 @@ services:
     depends_on:
       redis: {condition: service_healthy}
 
+  
   gateway:
     build: ./gateway
     ports: ["8000:8000"]
@@ -29,7 +30,12 @@ services:
       - JWT_SEGREDO=${JWT_SEGREDO:?Defina JWT_SEGREDO no arquivo .env}
       - JWT_USUARIO=${JWT_USUARIO:?Defina JWT_USUARIO no arquivo .env}
       - JWT_SENHA=${JWT_SENHA:?Defina JWT_SENHA no arquivo .env}
-    depends_on: [inferencia]
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - RATE_LIMIT_MAXIMO=${RATE_LIMIT_MAXIMO:-10}
+      - RATE_LIMIT_JANELA_SEGUNDOS=${RATE_LIMIT_JANELA_SEGUNDOS:-60}
+    depends_on:
+      redis: {condition: service_healthy}
+      inferencia: {condition: service_started}
 
 # Observe: os servicos se referenciam pelo NOME (inferencia, redis),
 # nunca por IP fixo. Isso e descoberta de servicos. (Aula 14)
