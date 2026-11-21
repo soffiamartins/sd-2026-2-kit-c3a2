@@ -71,7 +71,7 @@ class TesteRateLimit(TestCase):
 
         self.assertEqual(
             [r.status_code for r in respostas],
-            [200, 200, 429],
+            [202, 202, 429],
         )
 
         self.assertEqual(

@@ -123,7 +123,7 @@ class TesteAutenticacaoJWT(TestCase):
                 headers={"Authorization": f"Bearer {token}"},
             )
 
-        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(resposta.status_code, 202)
         self.assertEqual(resposta.json(), {"sentimento": "positivo"})
         self.assertEqual(requisicao.call_count, 1)
         self.assertEqual(

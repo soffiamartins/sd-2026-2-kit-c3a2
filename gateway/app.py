@@ -235,7 +235,7 @@ def saude():
     return {"status": "ok"}
 
 
-@app.post("/predict", dependencies=[Depends(limitar_requisicoes)])
+@app.post("/predict", status_code=202, dependencies=[Depends(limitar_requisicoes)],)
 def predict(entrada: Entrada):
     try:
         r = requests.post(
@@ -252,3 +252,32 @@ def predict(entrada: Entrada):
             status_code=503,
             detail=f"servico de inferencia indisponivel: {e}",
         )
+
+@app.get("/resultado/{tarefa_id}", dependencies=[Depends(exigir_jwt)])
+def consultar_resultado(tarefa_id: str):
+    """Consulta o resultado da tarefa pela API de inferencia."""
+    try:
+        resposta = requests.get(
+            f"{URL_INFERENCIA}/resultado/{tarefa_id}",
+            timeout=10,
+        )
+    except requests.RequestException:
+        raise HTTPException(
+            status_code=503,
+            detail="Servico de inferencia indisponivel.",
+        ) from None
+
+    if resposta.status_code == 404:
+        raise HTTPException(
+            status_code=404,
+            detail="Tarefa nao encontrada.",
+        )
+
+    try:
+        resposta.raise_for_status()
+        return resposta.json()
+    except requests.RequestException:
+        raise HTTPException(
+            status_code=503,
+            detail="Servico de inferencia indisponivel.",
+        ) from None
