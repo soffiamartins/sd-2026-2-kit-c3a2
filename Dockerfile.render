@@ -1,0 +1,21 @@
+
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Instala as dependências da inferência e do worker
+COPY inferencia/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Copia os dois serviços para pastas separadas
+COPY inferencia/app/ /app/inferencia/app/
+COPY worker/app/ /app/worker/app/
+
+# Script que iniciará os dois processos
+COPY iniciar_render.py /app/iniciar_render.py
+
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 8001
+
+CMD ["python", "/app/iniciar_render.py"]
