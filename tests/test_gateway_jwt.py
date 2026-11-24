@@ -13,6 +13,7 @@ AMBIENTE_TESTE = {
     "JWT_SEGREDO": SEGREDO_TESTE,
     "JWT_USUARIO": "aluno",
     "JWT_SENHA": "senha-de-teste",
+    "CHAVE_INTERNA": "chave-interna-ficticia-exclusiva-para-testes",
 }
 
 

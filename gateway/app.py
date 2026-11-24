@@ -306,9 +306,24 @@ async def registrar(request: Request, call_next):
 def saude():
     return {"status": "ok"}
 
+def cabecalhos_inferencia(request: Request) -> dict[str, str]:
+    chave = os.getenv("CHAVE_INTERNA", "")
+
+    if len(chave) < 32:
+        raise HTTPException(
+            status_code=503,
+            detail="Comunicacao interna nao configurada.",
+        )
+
+    return {
+        "X-Trace-ID": request.state.trace_id,
+        "X-Chave-Interna": chave,
+    }
+
 
 @app.post("/predict", status_code=202, dependencies=[Depends(limitar_requisicoes)])
 def predict(entrada: Entrada, request: Request):
+    headers = cabecalhos_inferencia(request)
     geracao = circuit_breaker.permitir()
     sucesso = False
 
@@ -316,7 +331,7 @@ def predict(entrada: Entrada, request: Request):
         r = requests.post(
             f"{URL_INFERENCIA}/predict",
             json=entrada.model_dump(),
-            headers={"X-Trace-ID": request.state.trace_id},
+            headers=headers,
             timeout=10,
         )
 
@@ -351,6 +366,7 @@ def predict(entrada: Entrada, request: Request):
 def consultar_resultado(tarefa_id: str, request: Request):
     """Consulta o resultado com retry e circuit breaker."""
 
+    headers = cabecalhos_inferencia(request)
     geracao = circuit_breaker.permitir()
     sucesso = False
 
@@ -359,7 +375,7 @@ def consultar_resultado(tarefa_id: str, request: Request):
             try:
                 resposta = requests.get(
                     f"{URL_INFERENCIA}/resultado/{tarefa_id}",
-                    headers={"X-Trace-ID": request.state.trace_id},
+                    headers=headers,
                     timeout=10,
                 )
 

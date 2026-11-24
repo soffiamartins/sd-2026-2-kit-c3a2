@@ -11,6 +11,7 @@ services:
     build: ./inferencia
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - CHAVE_INTERNA=${CHAVE_INTERNA:?Defina CHAVE_INTERNA no arquivo .env}
     depends_on:
       redis: {condition: service_healthy}
 
@@ -21,7 +22,6 @@ services:
     depends_on:
       redis: {condition: service_healthy}
 
-  
   gateway:
     build: ./gateway
     ports: ["8000:8000"]
@@ -30,6 +30,7 @@ services:
       - JWT_SEGREDO=${JWT_SEGREDO:?Defina JWT_SEGREDO no arquivo .env}
       - JWT_USUARIO=${JWT_USUARIO:?Defina JWT_USUARIO no arquivo .env}
       - JWT_SENHA=${JWT_SENHA:?Defina JWT_SENHA no arquivo .env}
+      - CHAVE_INTERNA=${CHAVE_INTERNA:?Defina CHAVE_INTERNA no arquivo .env}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - RATE_LIMIT_MAXIMO=${RATE_LIMIT_MAXIMO:-10}
       - RATE_LIMIT_JANELA_SEGUNDOS=${RATE_LIMIT_JANELA_SEGUNDOS:-60}

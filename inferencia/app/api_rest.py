@@ -1,10 +1,12 @@
 import logging
 import time
+import os
+import secrets
 
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Depends
 from pydantic import BaseModel
 
 from app import fila
@@ -16,6 +18,28 @@ logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="Serviço de Inferência - C1.A2", version="0.1.0")
 
 modelo = None
+
+def exigir_chave_interna(
+    x_chave_interna: Annotated[
+        str | None, Header(alias="X-Chave-Interna")
+    ] = None,
+):
+    chave = os.getenv("CHAVE_INTERNA", "")
+
+    if len(chave) < 32:
+        raise HTTPException(
+            status_code=503,
+            detail="Servico interno nao configurado.",
+        )
+
+    if not x_chave_interna or not secrets.compare_digest(
+        x_chave_interna.encode("utf-8"),
+        chave.encode("utf-8"),
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Acesso interno nao autorizado.",
+        )
 
 def obter_trace_id(valor: str | None = None) -> str:
     if valor:
@@ -45,7 +69,7 @@ def saude():
     return {"status": "ok", "modelo_carregado": modelo is not None}
 
 
-@app.post("/predict-sync")
+@app.post("/predict-sync", dependencies=[Depends(exigir_chave_interna)])
 def predict_sync(entrada: Entrada):
     """Inferência SÍNCRONA: o cliente espera a resposta. Lab da Aula 6."""
     if not entrada.texto.strip():
@@ -64,7 +88,7 @@ def predict_sync(entrada: Entrada):
 # ------------------------------------------------------------------
 # TAREFA 1 - submissão assíncrona
 # ------------------------------------------------------------------
-@app.post("/predict", status_code=202)
+@app.post( "/predict", status_code=202, dependencies=[Depends(exigir_chave_interna)],)
 def predict(
     entrada: Entrada,
     x_trace_id: Annotated[
@@ -98,7 +122,7 @@ def predict(
 # ------------------------------------------------------------------
 # TAREFA 2 - consulta do resultado
 # ------------------------------------------------------------------
-@app.get("/resultado/{tarefa_id}")
+@app.get( "/resultado/{tarefa_id}", dependencies=[Depends(exigir_chave_interna)],)
 def resultado(
     tarefa_id: str,
     x_trace_id: Annotated[

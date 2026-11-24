@@ -16,6 +16,7 @@ AMBIENTE_TESTE = {
     "JWT_SENHA": "senha-de-teste",
     "RATE_LIMIT_MAXIMO": "2",
     "RATE_LIMIT_JANELA_SEGUNDOS": "60",
+    "CHAVE_INTERNA": "chave-interna-ficticia-exclusiva-para-testes",
 }
 
 
