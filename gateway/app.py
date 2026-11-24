@@ -16,6 +16,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from redis.exceptions import RedisError
+from threading import Lock
 
 
 app = FastAPI(title="Gateway - C3.A2")
@@ -24,6 +25,8 @@ URL_INFERENCIA = os.getenv("URL_INFERENCIA", "http://localhost:8001")
 AUTENTICACAO_BEARER = HTTPBearer(auto_error=False)
 ALGORITMO_JWT = "HS256"
 MINUTOS_EXPIRACAO = 60
+CIRCUIT_MAX_FALHAS = 3
+CIRCUIT_TEMPO_RECUPERACAO = 30
 
 # O incremento e a expiracao acontecem atomicamente no Redis.
 SCRIPT_RATE_LIMIT = """
@@ -36,6 +39,67 @@ end
 return {contador, redis.call('TTL', KEYS[1])}
 """
 
+class CircuitBreaker:
+    def __init__(self):
+        self.falhas = 0
+        self.estado = "FECHADO"
+        self.aberto_desde = 0
+        self.lock = Lock()
+        self.geracao = 0
+
+    def permitir(self):
+        with self.lock:
+            if self.estado == "ABERTO":
+                tempo = time.monotonic() - self.aberto_desde
+
+                if tempo >= CIRCUIT_TEMPO_RECUPERACAO:
+                    self.estado = "SEMIABERTO"
+                    print("[circuit-breaker] SEMIABERTO")
+                    return self.geracao
+
+                raise HTTPException(
+                    status_code=503,
+                    detail="Circuit breaker aberto. Tente novamente mais tarde.",
+                )
+
+            if self.estado == "SEMIABERTO":
+                raise HTTPException(
+                    status_code=503,
+                    detail="Servico em recuperacao.",
+                )
+
+            return self.geracao
+
+    def registrar_sucesso(self, geracao):
+        with self.lock:
+            if geracao != self.geracao:
+                return
+
+            if self.estado == "SEMIABERTO":
+                print("[circuit-breaker] FECHADO")
+                self.geracao += 1
+
+            self.falhas = 0
+            self.estado = "FECHADO"
+
+    def registrar_falha(self, geracao):
+        with self.lock:
+            if geracao != self.geracao:
+                return
+
+            self.falhas += 1
+
+            if (
+                self.falhas >= CIRCUIT_MAX_FALHAS
+                or self.estado == "SEMIABERTO"
+            ):
+                self.estado = "ABERTO"
+                self.aberto_desde = time.monotonic()
+                self.geracao += 1
+                print("[circuit-breaker] ABERTO")
+
+
+circuit_breaker = CircuitBreaker()
 
 class Entrada(BaseModel):
     texto: str
@@ -235,8 +299,11 @@ def saude():
     return {"status": "ok"}
 
 
-@app.post("/predict", status_code=202, dependencies=[Depends(limitar_requisicoes)],)
+@app.post("/predict", status_code=202, dependencies=[Depends(limitar_requisicoes)])
 def predict(entrada: Entrada):
+    geracao = circuit_breaker.permitir()
+    sucesso = False
+
     try:
         r = requests.post(
             f"{URL_INFERENCIA}/predict",
@@ -245,43 +312,86 @@ def predict(entrada: Entrada):
         )
 
         r.raise_for_status()
-        return r.json()
+        resultado = r.json()
+        sucesso = True
+        return resultado
 
     except requests.RequestException as e:
+        if (
+            isinstance(e, requests.HTTPError)
+            and e.response is not None
+            and 400 <= e.response.status_code < 500
+            and e.response.status_code != 429
+        ):
+            sucesso = True
+
+        print(f"[gateway] Falha na previsao: {type(e).__name__}")
+
         raise HTTPException(
             status_code=503,
-            detail=f"servico de inferencia indisponivel: {e}",
-        )
+            detail="servico de inferencia indisponivel.",
+        ) from None
+
+    finally:
+        if sucesso:
+            circuit_breaker.registrar_sucesso(geracao)
+        else:
+            circuit_breaker.registrar_falha(geracao)
 
 @app.get("/resultado/{tarefa_id}", dependencies=[Depends(exigir_jwt)])
 def consultar_resultado(tarefa_id: str):
-    """Consulta o resultado com ate 3 tentativas em falhas temporarias."""
+    """Consulta o resultado com retry e circuit breaker."""
 
-    for tentativa in range(3):
-        try:
-            resposta = requests.get(
-                f"{URL_INFERENCIA}/resultado/{tarefa_id}",
-                timeout=10,
-            )
+    geracao = circuit_breaker.permitir()
+    sucesso = False
 
-            if resposta.status_code == 404:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Tarefa nao encontrada.",
+    try:
+        for tentativa in range(3):
+            try:
+                resposta = requests.get(
+                    f"{URL_INFERENCIA}/resultado/{tarefa_id}",
+                    timeout=10,
                 )
 
-            resposta.raise_for_status()
-            return resposta.json()
+                if resposta.status_code == 404:
+                    sucesso = True
+                    raise HTTPException(
+                        status_code=404,
+                        detail="Tarefa nao encontrada.",
+                    )
 
-        except requests.RequestException:
-            if tentativa < 2:
-                print(
-                    f"[gateway] Falha na consulta. "
-                    f"Nova tentativa {tentativa + 2}/3"
-                )
-                time.sleep(1)
-            else:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Servico de inferencia indisponivel apos 3 tentativas.",
-                ) from None
+                resposta.raise_for_status()
+                resultado = resposta.json()
+                sucesso = True
+                return resultado
+
+            except requests.RequestException as e:
+                if (
+                    isinstance(e, requests.HTTPError)
+                    and e.response is not None
+                    and 400 <= e.response.status_code < 500
+                    and e.response.status_code != 429
+                ):
+                    sucesso = True
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Falha na consulta do resultado.",
+                    ) from None
+
+                if tentativa < 2:
+                    print(
+                        f"[gateway] Falha na consulta. "
+                        f"Nova tentativa {tentativa + 2}/3"
+                    )
+                    time.sleep(1)
+                else:
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Servico de inferencia indisponivel apos 3 tentativas.",
+                    ) from None
+
+    finally:
+        if sucesso:
+            circuit_breaker.registrar_sucesso(geracao)
+        else:
+            circuit_breaker.registrar_falha(geracao)
