@@ -255,29 +255,33 @@ def predict(entrada: Entrada):
 
 @app.get("/resultado/{tarefa_id}", dependencies=[Depends(exigir_jwt)])
 def consultar_resultado(tarefa_id: str):
-    """Consulta o resultado da tarefa pela API de inferencia."""
-    try:
-        resposta = requests.get(
-            f"{URL_INFERENCIA}/resultado/{tarefa_id}",
-            timeout=10,
-        )
-    except requests.RequestException:
-        raise HTTPException(
-            status_code=503,
-            detail="Servico de inferencia indisponivel.",
-        ) from None
+    """Consulta o resultado com ate 3 tentativas em falhas temporarias."""
 
-    if resposta.status_code == 404:
-        raise HTTPException(
-            status_code=404,
-            detail="Tarefa nao encontrada.",
-        )
+    for tentativa in range(3):
+        try:
+            resposta = requests.get(
+                f"{URL_INFERENCIA}/resultado/{tarefa_id}",
+                timeout=10,
+            )
 
-    try:
-        resposta.raise_for_status()
-        return resposta.json()
-    except requests.RequestException:
-        raise HTTPException(
-            status_code=503,
-            detail="Servico de inferencia indisponivel.",
-        ) from None
+            if resposta.status_code == 404:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Tarefa nao encontrada.",
+                )
+
+            resposta.raise_for_status()
+            return resposta.json()
+
+        except requests.RequestException:
+            if tentativa < 2:
+                print(
+                    f"[gateway] Falha na consulta. "
+                    f"Nova tentativa {tentativa + 2}/3"
+                )
+                time.sleep(1)
+            else:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Servico de inferencia indisponivel apos 3 tentativas.",
+                ) from None
