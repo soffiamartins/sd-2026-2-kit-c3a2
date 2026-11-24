@@ -92,11 +92,3 @@ def guardar_dead_letter(tarefa_id: str, dados: dict) -> None:
             "tentativas": dados["tentativas"],
         },
     )
-
-    guardar_resultado(
-        tarefa_id,
-        {
-            "status": "erro",
-            "tentativas": dados["tentativas"],
-        },
-    )

@@ -37,16 +37,35 @@ class TestFilaWorker(unittest.TestCase):
         with patch.object(fila, "cliente") as obter_cliente:
             fila.guardar_dead_letter("teste-123", dados)
 
-        obter_cliente.return_value.rpush.assert_called_once_with(
+        redis_mock = obter_cliente.return_value
+        pipe = redis_mock.pipeline.return_value.enter.return_value
+
+        pipe.rpush.assert_called_once_with(
             "tarefas:dead-letter",
-            json.dumps({"id": "teste-123", **dados}),
+            json.dumps({
+                "id": "teste-123",
+                "tentativas": 3,
+                "status": "erro",
+            }),
         )
 
-        obter_cliente.return_value.set.assert_called_once_with(
+        pipe.ltrim.assert_called_once_with(
+            "tarefas:dead-letter",
+            -100,
+            -1,
+        )
+
+        pipe.execute.assert_called_once()
+
+        redis_mock.set.assert_called_once_with(
             "resultado:teste-123",
-            json.dumps({"status": "erro", "tentativas": 3}),
+            json.dumps({
+                "status": "erro",
+                "tentativas": 3,
+            }),
+            ex=86400,
         )
 
 
-if __name__ == "__main__":
+if __name__ == "main":
     unittest.main()
