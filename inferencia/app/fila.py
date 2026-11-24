@@ -14,6 +14,7 @@ import redis
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 FILA_TAREFAS = "tarefas"
 PREFIXO_RESULTADO = "resultado:"
+TTL_RESULTADO = 86400  # Retencao de 24 horas
 
 _cliente = None
 
@@ -41,6 +42,7 @@ def enfileirar(texto: str, trace_id: str | None = None) -> str:
         pipe.set(
             PREFIXO_RESULTADO + tarefa_id,
             json.dumps({"status": "na_fila"}),
+            ex=TTL_RESULTADO,
         )
         pipe.rpush(FILA_TAREFAS, json.dumps(tarefa))
         pipe.execute()
@@ -62,8 +64,11 @@ def proxima_tarefa(timeout: int = 5):
 
 
 def guardar_resultado(tarefa_id: str, resultado: dict) -> None:
-    cliente().set(PREFIXO_RESULTADO + tarefa_id, json.dumps(resultado))
-
+    cliente().set(
+        PREFIXO_RESULTADO + tarefa_id,
+        json.dumps(resultado),
+        ex=TTL_RESULTADO,
+    )
 
 def buscar_resultado(tarefa_id: str):
     bruto = cliente().get(PREFIXO_RESULTADO + tarefa_id)

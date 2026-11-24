@@ -13,6 +13,8 @@ import redis
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 FILA_TAREFAS = "tarefas"
 PREFIXO_RESULTADO = "resultado:"
+TTL_RESULTADO = 86400  # Retencao de 24 horas
+LIMITE_DEAD_LETTER = 100
 
 _cliente = None
 
@@ -28,8 +30,11 @@ def enfileirar(texto: str) -> str:
     """Coloca uma tarefa na fila e devolve o id para consulta posterior."""
     tarefa_id = str(uuid.uuid4())
     cliente().rpush(FILA_TAREFAS, json.dumps({"id": tarefa_id, "texto": texto}))
-    cliente().set(PREFIXO_RESULTADO + tarefa_id,
-                  json.dumps({"status": "na_fila"}))
+    cliente().set(
+    PREFIXO_RESULTADO + tarefa_id,
+    json.dumps({"status": "na_fila"}),
+    ex=TTL_RESULTADO,
+)
     return tarefa_id
 
 
@@ -42,7 +47,11 @@ def proxima_tarefa(timeout: int = 5):
 
 
 def guardar_resultado(tarefa_id: str, resultado: dict) -> None:
-    cliente().set(PREFIXO_RESULTADO + tarefa_id, json.dumps(resultado))
+    cliente().set(
+        PREFIXO_RESULTADO + tarefa_id,
+        json.dumps(resultado),
+        ex=TTL_RESULTADO,
+    )
 
 
 def buscar_resultado(tarefa_id: str):
@@ -56,10 +65,32 @@ def enfileirar_tarefa(tarefa: dict) -> None:
 
 
 def guardar_dead_letter(tarefa_id: str, dados: dict) -> None:
-    """Registra a falha definitiva e atualiza o status da tarefa."""
-    cliente().rpush(
-        "tarefas:dead-letter",
-        json.dumps({"id": tarefa_id, **dados}),
+    """Registra a falha definitiva sem armazenar o texto original."""
+
+    registro = {
+        "id": tarefa_id,
+        "tentativas": dados["tentativas"],
+        "status": "erro",
+    }
+
+    with cliente().pipeline(transaction=True) as pipe:
+        pipe.rpush(
+            "tarefas:dead-letter",
+            json.dumps(registro),
+        )
+        pipe.ltrim(
+            "tarefas:dead-letter",
+            -LIMITE_DEAD_LETTER,
+            -1,
+        )
+        pipe.execute()
+
+    guardar_resultado(
+        tarefa_id,
+        {
+            "status": "erro",
+            "tentativas": dados["tentativas"],
+        },
     )
 
     guardar_resultado(
