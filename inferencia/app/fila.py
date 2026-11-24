@@ -5,6 +5,7 @@ A fila guarda tarefas pendentes e os resultados prontos.
 Conceito da Aula 8: quem pede nao espera; um worker processa depois.
 """
 import json
+import logging
 import os
 import uuid
 
@@ -24,12 +25,31 @@ def cliente():
     return _cliente
 
 
-def enfileirar(texto: str) -> str:
-    """Coloca uma tarefa na fila e devolve o id para consulta posterior."""
+def enfileirar(texto: str, trace_id: str | None = None) -> str:
+    """Coloca uma tarefa na fila com rastreamento distribuido."""
+
     tarefa_id = str(uuid.uuid4())
-    cliente().rpush(FILA_TAREFAS, json.dumps({"id": tarefa_id, "texto": texto}))
-    cliente().set(PREFIXO_RESULTADO + tarefa_id,
-                  json.dumps({"status": "na_fila"}))
+    trace_id = trace_id or uuid.uuid4().hex
+
+    tarefa = {
+        "id": tarefa_id,
+        "texto": texto,
+        "trace_id": trace_id,
+    }
+
+    with cliente().pipeline(transaction=True) as pipe:
+        pipe.set(
+            PREFIXO_RESULTADO + tarefa_id,
+            json.dumps({"status": "na_fila"}),
+        )
+        pipe.rpush(FILA_TAREFAS, json.dumps(tarefa))
+        pipe.execute()
+
+    logging.info(
+        f"[fila] trace_id={trace_id} | "
+        f"id={tarefa_id} | tarefa enfileirada"
+    )
+
     return tarefa_id
 
 

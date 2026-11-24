@@ -1,7 +1,10 @@
 import logging
 import time
 
-from fastapi import FastAPI, HTTPException
+from typing import Annotated
+from uuid import UUID, uuid4
+
+from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
 
 from app import fila
@@ -13,6 +16,15 @@ logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="Serviço de Inferência - C1.A2", version="0.1.0")
 
 modelo = None
+
+def obter_trace_id(valor: str | None = None) -> str:
+    if valor:
+        try:
+            return UUID(valor).hex
+        except ValueError:
+            pass
+
+    return uuid4().hex
 
 
 class Entrada(BaseModel):
@@ -53,32 +65,66 @@ def predict_sync(entrada: Entrada):
 # TAREFA 1 - submissão assíncrona
 # ------------------------------------------------------------------
 @app.post("/predict", status_code=202)
-def predict(entrada: Entrada):
-    """Enfileira a tarefa e devolve {"id": ...} SEM esperar."""
+def predict(
+    entrada: Entrada,
+    x_trace_id: Annotated[
+        str | None, Header(alias="X-Trace-ID")
+    ] = None,
+):
+    """Enfileira a tarefa com rastreamento distribuido."""
+
+    trace_id = obter_trace_id(x_trace_id)
+
     if not entrada.texto.strip():
-        raise HTTPException(status_code=400, detail="O texto não pode estar vazio")
+        raise HTTPException(
+            status_code=400,
+            detail="O texto não pode estar vazio",
+        )
 
-    tarefa_id = fila.enfileirar(entrada.texto)
+    tarefa_id = fila.enfileirar(
+        entrada.texto,
+        trace_id=trace_id,
+    )
 
-    # TAREFA 6: Log de requisição assíncrona recebida
-    logging.info(f"[REST POST /predict] id={tarefa_id} | tamanho_entrada={len(entrada.texto)}")
+    logging.info(
+        f"[inferencia] trace_id={trace_id} | "
+        f"id={tarefa_id} | "
+        f"tamanho_entrada={len(entrada.texto)} | "
+        f"tarefa recebida"
+    )
 
     return {"id": tarefa_id}
-
 
 # ------------------------------------------------------------------
 # TAREFA 2 - consulta do resultado
 # ------------------------------------------------------------------
 @app.get("/resultado/{tarefa_id}")
-def resultado(tarefa_id: str):
-    """Devolve o resultado; 404 se o id não existir."""
+def resultado(
+    tarefa_id: str,
+    x_trace_id: Annotated[
+        str | None, Header(alias="X-Trace-ID")
+    ] = None,
+):
+    """Consulta o resultado com rastreamento."""
+
+    trace_id = obter_trace_id(x_trace_id)
+
     res = fila.buscar_resultado(tarefa_id)
 
     if res is None:
-        logging.warning(f"[REST GET /resultado] id={tarefa_id} NÃO ENCONTRADO")
-        raise HTTPException(status_code=404, detail="tarefa não encontrada")
+        logging.warning(
+            f"[inferencia] trace_id={trace_id} | "
+            f"id={tarefa_id} | NAO ENCONTRADO"
+        )
 
-    # TAREFA 6: Log da consulta de resultado
-    logging.info(f"[REST GET /resultado] id={tarefa_id} | status={res.get('status')}")
+        raise HTTPException(
+            status_code=404,
+            detail="tarefa não encontrada",
+        )
+
+    logging.info(
+        f"[inferencia] trace_id={trace_id} | "
+        f"id={tarefa_id} | status={res.get('status')}"
+    )
 
     return res

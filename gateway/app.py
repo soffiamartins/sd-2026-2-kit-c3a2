@@ -17,6 +17,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from redis.exceptions import RedisError
 from threading import Lock
+from uuid import uuid4
 
 
 app = FastAPI(title="Gateway - C3.A2")
@@ -281,14 +282,21 @@ def login(credenciais: CredenciaisLogin):
 
 @app.middleware("http")
 async def registrar(request: Request, call_next):
+    trace_id = uuid4().hex
+    request.state.trace_id = trace_id
+
     inicio = time.time()
     resposta = await call_next(request)
 
     ms = (time.time() - inicio) * 1000
 
+    resposta.headers["X-Trace-ID"] = trace_id
+
     print(
-        f"[gateway] {request.method} {request.url.path} "
-        f"-> {resposta.status_code} ({ms:.1f}ms)"
+        f"[gateway] trace_id={trace_id} "
+        f"{request.method} {request.url.path} "
+        f"-> {resposta.status_code} ({ms:.1f}ms)",
+        flush=True,
     )
 
     return resposta
@@ -300,7 +308,7 @@ def saude():
 
 
 @app.post("/predict", status_code=202, dependencies=[Depends(limitar_requisicoes)])
-def predict(entrada: Entrada):
+def predict(entrada: Entrada, request: Request):
     geracao = circuit_breaker.permitir()
     sucesso = False
 
@@ -308,6 +316,7 @@ def predict(entrada: Entrada):
         r = requests.post(
             f"{URL_INFERENCIA}/predict",
             json=entrada.model_dump(),
+            headers={"X-Trace-ID": request.state.trace_id},
             timeout=10,
         )
 
@@ -339,7 +348,7 @@ def predict(entrada: Entrada):
             circuit_breaker.registrar_falha(geracao)
 
 @app.get("/resultado/{tarefa_id}", dependencies=[Depends(exigir_jwt)])
-def consultar_resultado(tarefa_id: str):
+def consultar_resultado(tarefa_id: str, request: Request):
     """Consulta o resultado com retry e circuit breaker."""
 
     geracao = circuit_breaker.permitir()
@@ -350,6 +359,7 @@ def consultar_resultado(tarefa_id: str):
             try:
                 resposta = requests.get(
                     f"{URL_INFERENCIA}/resultado/{tarefa_id}",
+                    headers={"X-Trace-ID": request.state.trace_id},
                     timeout=10,
                 )
 
