@@ -38,7 +38,7 @@ class TestFilaWorker(unittest.TestCase):
             fila.guardar_dead_letter("teste-123", dados)
 
         redis_mock = obter_cliente.return_value
-        pipe = redis_mock.pipeline.return_value.enter.return_value
+        pipe = redis_mock.pipeline.return_value.__enter__.return_value
 
         pipe.rpush.assert_called_once_with(
             "tarefas:dead-letter",
@@ -67,5 +67,5 @@ class TestFilaWorker(unittest.TestCase):
         )
 
 
-if __name__ == "main":
+if __name__ == "__main__":
     unittest.main()
