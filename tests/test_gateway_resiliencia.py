@@ -1,6 +1,6 @@
 import time
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, call
 
 from fastapi.testclient import TestClient
 from requests.exceptions import ConnectionError
@@ -82,6 +82,7 @@ class TesteResiliencia(unittest.TestCase):
 
         self.assertEqual(resposta.status_code, 200)
         self.assertEqual(requisicao.call_count, 2)
+        self.relogio.sleep.assert_called_once_with(1)
         self.assertEqual(self.circuito.estado, "FECHADO")
 
     def test_retry_limita_tentativas(self):
@@ -92,6 +93,7 @@ class TesteResiliencia(unittest.TestCase):
 
         self.assertEqual(resposta.status_code, 503)
         self.assertEqual(requisicao.call_count, 3)
+        self.assertEqual(self.relogio.sleep.call_args_list,[call(1), call(2)],)
 
     def test_circuit_breaker_bloqueia_chamadas(self):
         with patch("gateway.app.requests.get") as requisicao:

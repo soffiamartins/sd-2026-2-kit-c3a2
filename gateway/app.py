@@ -409,7 +409,7 @@ def consultar_resultado(tarefa_id: str, request: Request):
                         f"[gateway] Falha na consulta. "
                         f"Nova tentativa {tentativa + 2}/3"
                     )
-                    time.sleep(1)
+                    time.sleep(2 ** tentativa)
                 else:
                     raise HTTPException(
                         status_code=503,

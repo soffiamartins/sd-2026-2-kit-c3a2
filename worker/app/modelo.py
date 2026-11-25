@@ -57,6 +57,12 @@ class ModeloSentimento:
             "confianca": round(float(proba[idx]), 4),
         }
 
+    def vetorizar(self, texto: str) -> list[float]:
+        """Transforma o texto em um vetor numerico TF-IDF."""
+        vetorizador = self._pipeline.named_steps["tfidfvectorizer"]
+        vetor = vetorizador.transform([texto])
+        return vetor.toarray()[0].tolist()
+
 
 def _treinar():
     textos = [t for t, _ in TREINO]

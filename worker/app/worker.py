@@ -38,13 +38,14 @@ def main():
 
         try:
             resultado = modelo.prever(texto)
+            vetor = modelo.vetorizar(texto)
             resultado["status"] = "pronto"
 
             tempo_ms = round((time.time() - inicio) * 1000, 2)
             resultado["tempo_ms"] = tempo_ms
 
             # Salva o resultado no Redis
-            fila.guardar_resultado(tarefa_id, resultado)
+            fila.guardar_resultado_com_vetor(tarefa_id, resultado, vetor)
 
             logging.info(
                 f"[worker] trace_id={trace_id} | "

@@ -13,6 +13,7 @@ import redis
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 FILA_TAREFAS = "tarefas"
 PREFIXO_RESULTADO = "resultado:"
+PREFIXO_VETOR = "vetor:"
 TTL_RESULTADO = 86400  # Retencao de 24 horas
 LIMITE_DEAD_LETTER = 100
 
@@ -53,6 +54,28 @@ def guardar_resultado(tarefa_id: str, resultado: dict) -> None:
         ex=TTL_RESULTADO,
     )
 
+def guardar_resultado_com_vetor(
+    tarefa_id: str, resultado: dict, vetor: list[float]
+) -> None:
+    """Armazena o resultado e o vetor TF-IDF no Redis."""
+    with cliente().pipeline(transaction=True) as pipe:
+        pipe.set(
+            PREFIXO_RESULTADO + tarefa_id,
+            json.dumps(resultado),
+            ex=TTL_RESULTADO,
+        )
+        pipe.set(
+            PREFIXO_VETOR + tarefa_id,
+            json.dumps(vetor),
+            ex=TTL_RESULTADO,
+        )
+        pipe.execute()
+
+
+def buscar_vetor(tarefa_id: str):
+    """Recupera o vetor armazenado pelo identificador da tarefa."""
+    bruto = cliente().get(PREFIXO_VETOR + tarefa_id)
+    return json.loads(bruto) if bruto else None
 
 def buscar_resultado(tarefa_id: str):
     bruto = cliente().get(PREFIXO_RESULTADO + tarefa_id)
